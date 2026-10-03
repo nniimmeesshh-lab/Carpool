@@ -75,7 +75,7 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
   const poolTz = (poolId) => one('SELECT tz FROM pools WHERE id=?', poolId).tz;
   const memberIds = (poolId) => all('SELECT user_id FROM members WHERE pool_id=?', poolId).map((r) => r.user_id);
   const riderParentIds = (rideId) => all('SELECT DISTINCT k.parent_id FROM riders x JOIN kids k ON k.id=x.kid_id WHERE x.ride_id=?', rideId).map((r) => r.parent_id);
-  const describe = (r) => `${r.kind === 'dropoff' ? 'Drop-off' : 'Pickup'} on ${r.date} at ${r.time} (${r.place})`;
+  const describe = (r) => `${r.kind === 'dropoff' ? 'Drop-off' : 'Pickup'} on ${r.date} at ${r.time} (${r.place}${r.dest ? ` → ${r.dest}` : ''})`;
 
   // ---- notifications: in-app row for everyone, plus email unless the user opted out ----
   const sendPush = (userId, payload) => {
@@ -287,7 +287,8 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
     requireMember(params.id, user.id);
     if (!['dropoff', 'pickup'].includes(body.kind)) throw bad('kind must be dropoff or pickup');
     const date = parseDate(body.date), time = parseTime(body.time);
-    const place = str(body.place, 'Place', 120);
+    const place = str(body.place, 'Starting point', 120);
+    const dest = body.dest ? str(body.dest, 'Destination', 120) : '';
     const seats = parseSeats(body.seats ?? 4);
     const weeks = Number(body.repeat_weeks ?? 1);
     if (!Number.isInteger(weeks) || weeks < 1 || weeks > 26) throw bad('Repeat must be 1-26 weeks');
@@ -297,11 +298,11 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
       const d = new Date(date + 'T00:00:00Z');
       d.setUTCDate(d.getUTCDate() + 7 * i);
       const { lastInsertRowid } = run(
-        'INSERT INTO rides (pool_id,kind,date,time,place,seats,driver_id,created_by) VALUES (?,?,?,?,?,?,?,?)',
-        params.id, body.kind, d.toISOString().slice(0, 10), time, place, seats, driver, user.id);
+        'INSERT INTO rides (pool_id,kind,date,time,place,dest,seats,driver_id,created_by) VALUES (?,?,?,?,?,?,?,?,?)',
+        params.id, body.kind, d.toISOString().slice(0, 10), time, place, dest, seats, driver, user.id);
       ids.push(Number(lastInsertRowid));
     }
-    const first = { kind: body.kind, date, time, place };
+    const first = { kind: body.kind, date, time, place, dest };
     notify(memberIds(params.id), {
       type: driver ? 'ride_new' : 'needs_driver', pool_id: Number(params.id), ride_id: ids[0],
       text: `${user.name} added ${weeks > 1 ? `${weeks} weekly rides starting ` : ''}${describe(first)} – ${driver ? 'seats available' : 'needs a driver'}`,
@@ -316,7 +317,8 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
     const next = {
       date: 'date' in body ? parseDate(body.date) : ride.date,
       time: 'time' in body ? parseTime(body.time) : ride.time,
-      place: 'place' in body ? str(body.place, 'Place', 120) : ride.place,
+      place: 'place' in body ? str(body.place, 'Starting point', 120) : ride.place,
+      dest: 'dest' in body ? (body.dest ? str(body.dest, 'Destination', 120) : '') : ride.dest,
       seats: 'seats' in body ? parseSeats(body.seats) : ride.seats,
       driver_id: ride.driver_id,
     };
@@ -331,12 +333,12 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
         next.driver_id = id;
       }
     }
-    const changed = ['date', 'time', 'place', 'seats'].filter((f) => next[f] !== ride[f]);
+    const changed = ['date', 'time', 'place', 'dest', 'seats'].filter((f) => next[f] !== ride[f]);
     const driverChanged = next.driver_id !== ride.driver_id;
     if (!changed.length && !driverChanged) return { ok: true };
     const reminded = changed.some((f) => f !== 'seats') ? 0 : ride.reminded;
-    run('UPDATE rides SET date=?, time=?, place=?, seats=?, driver_id=?, reminded=? WHERE id=?',
-      next.date, next.time, next.place, next.seats, next.driver_id, reminded, ride.id);
+    run('UPDATE rides SET date=?, time=?, place=?, dest=?, seats=?, driver_id=?, reminded=? WHERE id=?',
+      next.date, next.time, next.place, next.dest, next.seats, next.driver_id, reminded, ride.id);
     const after = { ...ride, ...next };
     const base = { pool_id: ride.pool_id, ride_id: ride.id };
     if (changed.some((f) => f !== 'seats'))

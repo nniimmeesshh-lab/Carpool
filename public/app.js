@@ -189,7 +189,8 @@ function rideCard(r) {
   }).join('') : 'none yet';
   return `<div class="card">
     <div class="row sb"><strong>${r.kind === 'dropoff' ? '🏫 Drop-off' : '🏠 Pickup'} · ${fmtDate(r.date)} ${esc(r.time)}</strong>${statusTag}</div>
-    <div class="muted">${esc(r.place)} · ${r.seats_left}/${r.seats} seats open</div>
+    <div>📍 ${esc(r.place)}${r.dest ? ` <strong>→</strong> 🏁 ${esc(r.dest)}` : ''}</div>
+    <div class="muted">${r.seats_left}/${r.seats} seats open</div>
     <div class="muted">Kids: ${kids}</div>${trackBlock(r)}
     <div class="row" style="margin-top:8px">${buttons.join('')}</div></div>`;
 }
@@ -201,7 +202,8 @@ function editCard(r) {
     <div><label>Time</label><input name="time" type="time" value="${esc(r.time)}" required></div>
     <div><label>Seats</label><input name="seats" type="number" min="${Math.max(1, r.riders.length)}" max="12" value="${num(r.seats)}"></div>
     <div><label>Driver</label><select name="driver_id"><option value="">Needs a driver</option>${members}</select></div></div>
-    <label>Where</label><input name="place" value="${esc(r.place)}" required>
+    <label>Pick up from</label><input name="place" value="${esc(r.place)}" required>
+    <label>Drop off at</label><input name="dest" value="${esc(r.dest)}">
     <div class="row" style="margin-top:8px"><button class="primary">Save</button><button type="button" data-canceledit>Cancel</button></div></form>`;
 }
 
@@ -215,11 +217,12 @@ function poolView() {
       (p.rides.map(rideCard).join('') || '<p class="muted">No upcoming rides yet. Add one!</p>');
   } else if (state.tab === 'new') {
     body = `<form id="newRide" class="card">
-      <div class="grid2"><div><label>Type</label><select name="kind"><option value="dropoff">Drop-off</option><option value="pickup">Pickup</option></select></div>
+      <div class="grid2"><div><label>Type</label><select name="kind"><option value="dropoff">Drop-off run (taking kids to school/activity)</option><option value="pickup">Pickup run (bringing kids home)</option></select></div>
       <div><label>Seats for kids</label><input name="seats" type="number" min="1" max="12" value="4"></div>
       <div><label>Date</label><input name="date" type="date" value="${today()}" required></div>
       <div><label>Time</label><input name="time" type="time" value="08:00" required></div></div>
-      <label>Where (school / address)</label><input name="place" required>
+      <label>Pick up from (address or meeting spot)</label><input name="place" placeholder="e.g. 12 Oak St, or the corner of Elm &amp; 5th" required>
+      <label>Drop off at</label><input name="dest" placeholder="e.g. Maple Elementary, 40 School Rd" required>
       <label>Repeat weekly for (weeks)</label><input name="repeat_weeks" type="number" min="1" max="26" value="1">
       <label class="row"><input type="checkbox" name="drive" style="width:auto"> I'll drive this one</label>
       <div class="err">${esc(state.error)}</div><button class="primary">Add ride</button></form>`;
@@ -335,7 +338,7 @@ function bind() {
   on('[data-canceledit]', 'click', () => { state.editing = null; render(); });
   on('[data-editform]', 'submit', act(async (e) => {
     const f = formData(e), id = Number(e.target.dataset.editform);
-    await api('PATCH', `/api/rides/${id}`, { date: f.date, time: f.time, place: f.place, seats: Number(f.seats), driver_id: f.driver_id ? Number(f.driver_id) : null });
+    await api('PATCH', `/api/rides/${id}`, { date: f.date, time: f.time, place: f.place, dest: f.dest, seats: Number(f.seats), driver_id: f.driver_id ? Number(f.driver_id) : null });
     state.editing = null; await load();
   }));
   on('[data-leavepool]', 'click', act(async () => { if (confirm('Leave this pool?')) { await api('DELETE', `/api/pools/${state.pool.id}/membership`); state.pool = null; await load(); } }));

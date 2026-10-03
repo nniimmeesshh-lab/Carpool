@@ -157,3 +157,14 @@ test('rate limiting and session expiry', () => {
   clock.t += 31 * 864e5;
   assert.equal(ann('GET', '/api/me').status, 401);
 });
+
+test('rides have a starting point and a destination', () => {
+  const { ann, bob, kid, pool } = world();
+  const id = ann('POST', `/api/pools/${pool.id}/rides`, { kind: 'dropoff', date: '2030-05-08', time: '08:00', place: '12 Oak St', dest: 'Maple Elementary', drive: true }).body.ids[0];
+  const ride = bob('GET', `/api/pools/${pool.id}`).body.rides[0];
+  assert.equal(ride.place, '12 Oak St'); assert.equal(ride.dest, 'Maple Elementary');
+  assert.match(unread(bob)[0], /\(12 Oak St → Maple Elementary\)/);
+  bob('POST', `/api/rides/${id}/riders`, { kid_id: kid });
+  assert.equal(ann('PATCH', `/api/rides/${id}`, { dest: 'Gate 2' }).status, 200);
+  assert.match(unread(bob)[0], /is now .*\(12 Oak St → Gate 2\)/);
+});

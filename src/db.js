@@ -61,6 +61,7 @@ export function openDb(path = ':memory:') {
   addColumn('users', 'email_notifs', 'INTEGER NOT NULL DEFAULT 1');
   addColumn('pools', 'tz', "TEXT NOT NULL DEFAULT 'UTC'");
   addColumn('rides', 'status', "TEXT NOT NULL DEFAULT 'scheduled'");
+  addColumn('rides', 'dest', "TEXT NOT NULL DEFAULT ''");
   addColumn('rides', 'lat', 'REAL');
   addColumn('rides', 'lng', 'REAL');
   addColumn('rides', 'loc_at', 'INTEGER');
