@@ -6,7 +6,7 @@ A simple app for parents to coordinate school drop-offs and pickups.
 - **Pools**: a group (class, team, street) joined with an invite code; parents add their kids
 - **Rides**: post drop-offs/pickups, optionally repeating weekly. Volunteer to drive or book your child (seat limits enforced)
 - **Edit & hand off**: the creator or driver can change date/time/place/seats or reassign the driver; a driver who can't make it releases the ride and the pool is told it needs a driver
-- **Notifications** (in-app bell, optional email, optional browser alerts): new rides, driver found/cancelled, rides changed or cancelled, kids added/removed, ride started, kid picked up/arrived, plus reminders (1 hour before a driven ride; 24 hours before a ride with no driver)
+- **Notifications** (in-app bell, **Web Push to phones/desktops even when the app is closed**, optional email): new rides, driver found/cancelled, rides changed or cancelled, kids added/removed, ride started, kid picked up/arrived, plus reminders (1 hour before a driven ride; 24 hours before a ride with no driver)
 - **Live tracking**: on the day, the driver taps *Start ride* and shares GPS; parents of kids on that ride see a live map. The driver marks each child *picked up* / *arrived* and the parent is alerted. Location is visible only to the driver and those parents, and is deleted when the ride finishes
 - **Accounts**: password reset by email, scrypt password hashes, 30-day sessions
 
@@ -21,6 +21,9 @@ Requires Node 22.5+ (built-in `node:sqlite`; no npm install).
 | `PORT`, `DB_PATH` | listen port (3000) and SQLite file (`carpool.db`) |
 | `BASE_URL` | public URL used in emailed links (e.g. `https://carpool.example.com`) |
 | `MAIL_WEBHOOK`, `MAIL_FROM` | POST target for outgoing email `{from,to,subject,text}`. Unset = mail is only logged (dev). Point it at a small relay in front of SES/SendGrid/SMTP |
+| `VAPID_SUBJECT` | contact for push services (`mailto:you@example.com` or your https URL). Defaults to `BASE_URL` when https |
+| `VAPID_PRIVATE_JWK` | optional: supply the push signing key (JSON JWK) instead of the auto-generated one stored in the DB |
+| `PUSH_ALLOWED_HOSTS` | extra push-service hostname suffixes to accept (defaults: Google FCM, Mozilla, Apple, Windows) |
 | `TLS_CERT`, `TLS_KEY` | serve HTTPS directly |
 | `TRUST_PROXY=1` | behind a TLS-terminating proxy: trust `X-Forwarded-Proto/For` (Secure cookies, HSTS, per-IP limits) |
 
@@ -33,8 +36,15 @@ reminder timer are in-memory/per-process) and back up the SQLite file.
 HttpOnly + SameSite cookies (Secure over HTTPS), CSP and other security headers, JSON-only API with origin check (CSRF),
 rate limits on login/signup/reset/join, single-use expiring reset tokens that sign out all sessions.
 
+## Push notifications
+Zero extra dependencies: payload encryption (RFC 8291) and VAPID (RFC 8292) use `node:crypto`, verified against the RFC test vector.
+Parents tap the bell → **Turn on push alerts** on each device. Needs HTTPS (or localhost).
+- **Keep the VAPID key**: it lives in the SQLite DB (`settings` table); if it's lost, every device must re-subscribe.
+- **iPhone/iPad**: push only works for the installed app (Share → Add to Home Screen, then open it from the home screen; iOS 16.4+).
+- Subscriptions are tied to a device; logging out detaches it, and logging in as someone else re-attaches it.
+- Dead subscriptions (HTTP 404/410 from the push service) are removed automatically.
+
 ## Known limits
-- Alerts reach a phone only while the app is open (in-app/browser notifications) or by email. True background push
-  needs Web Push (service worker + VAPID keys) or a native app.
+- Push delivery depends on the browser vendor's push service; it is best-effort (email remains the fallback).
 - Tracking only transmits while the driver's screen stays on with the page open (a wake lock is requested).
 - The map is an OpenStreetMap embed.

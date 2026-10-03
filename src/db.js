@@ -21,6 +21,11 @@ export function openDb(path = ':memory:') {
       type TEXT NOT NULL, text TEXT NOT NULL, pool_id INTEGER, ride_id INTEGER,
       created_at INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS push_subs (
+      endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS notif_user ON notifications(user_id, id);
     CREATE TABLE IF NOT EXISTS pools (
       id INTEGER PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE

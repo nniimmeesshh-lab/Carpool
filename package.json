@@ -7,6 +7,6 @@
   "engines": { "node": ">=22.5" },
   "scripts": {
     "start": "node --no-warnings src/server.js",
-    "test": "node --no-warnings --test test/app.test.js test/features.test.js test/server.test.js"
+    "test": "node --no-warnings --test test/app.test.js test/features.test.js test/server.test.js test/push.test.js"
   }
 }

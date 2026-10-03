@@ -7,9 +7,10 @@ import { extname, join, normalize, sep } from 'node:path';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
 import { createMailer } from './mail.js';
+import { createPusher, loadVapid } from './push.js';
 
 const PUBLIC = fileURLToPath(new URL('../public', import.meta.url));
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
   "frame-src https://www.openstreetmap.org; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -57,7 +58,8 @@ export function createServer(handle, { trustProxy = false, tls = null } = {}) {
     if (!file.startsWith(PUBLIC + sep)) return res.writeHead(404, baseHeaders).end('Not found');
     try {
       const data = await readFile(file);
-      res.writeHead(200, { ...baseHeaders, 'Content-Type': TYPES[extname(rel)] ?? 'application/octet-stream' }).end(data);
+      const cache = rel === 'sw.js' ? { 'Cache-Control': 'no-cache' } : {}; // let browsers pick up service worker updates
+      res.writeHead(200, { ...baseHeaders, ...cache, 'Content-Type': TYPES[extname(rel)] ?? 'application/octet-stream' }).end(data);
     } catch { res.writeHead(404, baseHeaders).end('Not found'); }
   };
   return tls ? https.createServer(tls, listener) : http.createServer(listener);
@@ -68,7 +70,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const tls = process.env.TLS_CERT && process.env.TLS_KEY
     ? { cert: readFileSync(process.env.TLS_CERT), key: readFileSync(process.env.TLS_KEY) } : null;
   const baseUrl = process.env.BASE_URL ?? `${tls ? 'https' : 'http'}://localhost:${port}`;
-  const app = createApp(openDb(process.env.DB_PATH ?? 'carpool.db'), { mailer: createMailer(), baseUrl });
+  const db = openDb(process.env.DB_PATH ?? 'carpool.db');
+  const push = createPusher({ vapid: loadVapid(db), subject: process.env.VAPID_SUBJECT ?? (baseUrl.startsWith('https:') ? baseUrl : 'mailto:admin@example.com') });
+  const app = createApp(db, { mailer: createMailer(), push, baseUrl });
   setInterval(() => { try { app.runReminders(); } catch (e) { console.error('reminders failed', e); } }, 60_000).unref();
   createServer(app, { trustProxy: process.env.TRUST_PROXY === '1', tls }).listen(port, () => console.log(`Carpool running at ${baseUrl}`));
 }

@@ -1,6 +1,7 @@
 import { randomBytes, createHash, scryptSync, timingSafeEqual } from 'node:crypto';
 import { rideStart, todayIn, validTz } from './time.js';
 import { createLimiter } from './ratelimit.js';
+import { isAllowedEndpoint, validKeys } from './push.js';
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -51,10 +52,11 @@ const checkPassword = (pw) => {
 /**
  * @param db        node:sqlite database from openDb()
  * @param opts.mailer   {send({to,subject,text})} – email transport (see mail.js)
+ * @param opts.push     pusher from push.js (omit to disable Web Push)
  * @param opts.baseUrl  public URL used in emailed links
  * @param opts.now      clock, for tests
  */
-export function createApp(db, { mailer = { send() {} }, baseUrl = 'http://localhost:3000', now = Date.now } = {}) {
+export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = 'http://localhost:3000', now = Date.now } = {}) {
   const one = (sql, ...p) => db.prepare(sql).get(...p);
   const all = (sql, ...p) => db.prepare(sql).all(...p);
   const run = (sql, ...p) => db.prepare(sql).run(...p);
@@ -76,11 +78,20 @@ export function createApp(db, { mailer = { send() {} }, baseUrl = 'http://localh
   const describe = (r) => `${r.kind === 'dropoff' ? 'Drop-off' : 'Pickup'} on ${r.date} at ${r.time} (${r.place})`;
 
   // ---- notifications: in-app row for everyone, plus email unless the user opted out ----
+  const sendPush = (userId, payload) => {
+    for (const sub of all('SELECT * FROM push_subs WHERE user_id=?', userId)) {
+      Promise.resolve().then(() => push.send(sub, payload))
+        .then((r) => { if (r.gone) run('DELETE FROM push_subs WHERE endpoint=?', sub.endpoint); })
+        .catch((e) => console.error('push failed:', e.message));
+    }
+  };
   const notify = (userIds, n, actorId) => {
     for (const id of new Set(userIds)) {
       if (!id || id === actorId) continue;
-      run('INSERT INTO notifications (user_id,type,text,pool_id,ride_id,created_at) VALUES (?,?,?,?,?,?)',
+      const { lastInsertRowid: lastId } = run('INSERT INTO notifications (user_id,type,text,pool_id,ride_id,created_at) VALUES (?,?,?,?,?,?)',
         id, n.type, n.text, n.pool_id ?? null, n.ride_id ?? null, now());
+      const nid = Number(lastId);
+      if (push) sendPush(id, { title: 'Carpool', body: n.text.slice(0, 200), tag: n.ride_id ? `ride-${n.ride_id}` : `n-${nid}`, url: '/' });
       const u = one('SELECT email, email_notifs FROM users WHERE id=?', id);
       if (u?.email_notifs) {
         Promise.resolve().then(() => mailer.send({ to: u.email, subject: n.text.slice(0, 100), text: `${n.text}\n\nOpen Carpool: ${baseUrl}` }))
@@ -210,6 +221,24 @@ export function createApp(db, { mailer = { send() {} }, baseUrl = 'http://localh
     return { ok: true };
   });
 
+  // ---- Web Push subscriptions (one per browser/device) ----
+  route('GET', '/api/push/key', true, () => ({ key: push?.publicKey ?? null }));
+  route('POST', '/api/push/subscribe', true, ({ user, body }) => {
+    if (!push) throw bad('Push notifications are not enabled on this server');
+    if (!isAllowedEndpoint(body.endpoint)) throw bad('Unsupported push service');
+    if (!validKeys(body.keys)) throw bad('Invalid push keys');
+    // endpoint is unique per browser profile: re-subscribing after a different user logs in re-attaches it
+    run(`INSERT INTO push_subs (endpoint,user_id,p256dh,auth,created_at) VALUES (?,?,?,?,?)
+         ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth`,
+      body.endpoint, user.id, body.keys.p256dh, body.keys.auth, now());
+    run('DELETE FROM push_subs WHERE user_id=? AND endpoint NOT IN (SELECT endpoint FROM push_subs WHERE user_id=? ORDER BY created_at DESC LIMIT 10)', user.id, user.id);
+    return { ok: true };
+  });
+  route('POST', '/api/push/unsubscribe', true, ({ user, body }) => {
+    run('DELETE FROM push_subs WHERE endpoint=? AND user_id=?', String(body.endpoint ?? ''), user.id);
+    return { ok: true };
+  });
+
   route('POST', '/api/kids', true, ({ user, body }) => {
     const { lastInsertRowid } = run('INSERT INTO kids (name,parent_id) VALUES (?,?)', str(body.name, 'Child name', 50), user.id);
     return { id: Number(lastInsertRowid) };
@@ -311,7 +340,7 @@ export function createApp(db, { mailer = { send() {} }, baseUrl = 'http://localh
     const after = { ...ride, ...next };
     const base = { pool_id: ride.pool_id, ride_id: ride.id };
     if (changed.some((f) => f !== 'seats'))
-      notify([ride.driver_id, next.driver_id, ...riders], { ...base, type: 'ride_changed', text: `${user.name} changed a ride: ${describe(ride)} is now ${describe(after)}` }, user.id);
+      notify([ride.created_by, ride.driver_id, next.driver_id, ...riders], { ...base, type: 'ride_changed', text: `${user.name} changed a ride: ${describe(ride)} is now ${describe(after)}` }, user.id);
     if (driverChanged) {
       if (next.driver_id) notify([next.driver_id], { ...base, type: 'assigned', text: `${user.name} asked you to drive ${describe(after)}` }, user.id);
       else notify(memberIds(ride.pool_id), { ...base, type: 'needs_driver', text: `${describe(after)} needs a driver` }, user.id);

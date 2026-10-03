@@ -3,6 +3,7 @@ const state = {
   me: null, kids: [], pools: [], pool: null, tab: 'rides', error: '', info: '',
   authMode: 'login', resetToken: null,
   notes: [], unread: 0, showNotes: false, editing: null, sharing: null,
+  push: 'checking', // checking | unsupported | needs-install | unavailable | off | on | denied
 };
 let geoWatch = null, wakeLock = null, lastSent = 0, lastNoteId = 0;
 
@@ -39,8 +40,6 @@ async function pollNotes(first = false) {
   try {
     const { items, unread } = await api('GET', '/api/notifications');
     const fresh = items.filter((n) => n.id > lastNoteId && !n.read);
-    if (!first && 'Notification' in window && Notification.permission === 'granted' && document.hidden)
-      fresh.slice(0, 3).forEach((n) => new Notification('Carpool', { body: n.text, tag: 'carpool-' + n.id }));
     lastNoteId = Math.max(lastNoteId, ...items.map((n) => n.id), 0);
     const changed = fresh.length > 0 || unread !== state.unread;
     state.notes = items; state.unread = unread;
@@ -55,6 +54,57 @@ async function pollNotes(first = false) {
 }
 setInterval(() => { if (!document.hidden || state.sharing) pollNotes(); }, 10000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollNotes(); });
+
+// ---------- Web Push ----------
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const keyBytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+let swReg = null;
+
+async function pushStatus() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
+    return isIOS && !standalone ? 'needs-install' : 'unsupported';
+  try {
+    swReg ??= await navigator.serviceWorker.register('/sw.js');
+    if (Notification.permission === 'denied') return 'denied';
+    const { key } = await api('GET', '/api/push/key');
+    if (!key) return 'unavailable';
+    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+    return sub ? 'on' : 'off';
+  } catch { return 'unsupported'; }
+}
+const subJson = (sub) => { const j = sub.toJSON(); return { endpoint: j.endpoint, keys: j.keys }; };
+
+async function enablePush() {
+  if (await Notification.requestPermission() !== 'granted') { state.push = 'denied'; return; }
+  const { key } = await api('GET', '/api/push/key');
+  const reg = await navigator.serviceWorker.ready;
+  let sub;
+  try { sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }); }
+  catch { throw new Error("Couldn't reach your browser's push service. Check your connection and try again."); }
+  await api('POST', '/api/push/subscribe', subJson(sub));
+  state.push = 'on';
+}
+async function disablePush() {
+  const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+  if (sub) { await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+  state.push = 'off';
+}
+// A device that is already subscribed gets (re)attached to whoever is logged in now.
+async function syncPush() {
+  state.push = await pushStatus();
+  if (state.push === 'on') {
+    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+    if (sub) await api('POST', '/api/push/subscribe', subJson(sub)).catch(() => {});
+  }
+  render();
+}
+async function detachPush() { // on logout: stop sending this user's alerts to this device
+  try {
+    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+    if (sub) await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint });
+  } catch { /* best effort */ }
+}
 
 // ---------- location sharing (driver) ----------
 async function startSharing(rideId) {
@@ -187,10 +237,16 @@ const bell = () => `<button class="small bell" data-bell aria-label="Notificatio
 
 function notesPanel() {
   if (!state.showNotes) return '';
-  const perm = 'Notification' in window && Notification.permission === 'default'
-    ? '<button class="small" data-allownotes>Show alerts on this device</button>' : '';
+  const perm = {
+    off: '<button class="small primary" data-pushon>Turn on push alerts</button>',
+    on: '<span class="tag ok">Push alerts on</span> <button class="small link" data-pushoff>turn off</button>',
+    denied: '<span class="muted">Alerts are blocked in this browser\'s settings</span>',
+    'needs-install': '<span class="muted">On iPhone: tap Share → Add to Home Screen, then open Carpool from there to enable alerts</span>',
+    unsupported: '<span class="muted">This browser can\'t do push alerts</span>',
+    unavailable: '<span class="muted">Push alerts aren\'t enabled on this server</span>',
+  }[state.push] ?? '';
   const email = `<label class="row" style="margin:4px 0"><input type="checkbox" data-emailpref style="width:auto" ${state.me.email_notifs ? 'checked' : ''}> Also email me</label>`;
-  return `<div class="card"><div class="row sb"><strong>Notifications</strong>${perm}</div>${email}
+  return `<div class="card"><strong>Notifications</strong><div class="row" style="margin:6px 0">${perm}</div>${email}
     ${state.notes.map((n) => `<div class="note ${n.read ? '' : 'new'}">${esc(n.text)}<div class="muted">${new Date(n.created_at).toLocaleString()}</div></div>`).join('') || '<div class="muted">Nothing yet.</div>'}</div>`;
 }
 
@@ -215,7 +271,7 @@ function render() {
 const on = (sel, ev, fn) => $app.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, fn));
 const formData = (e) => { e.preventDefault(); return Object.fromEntries(new FormData(e.target)); };
 const ids = (v) => v.split(':').map((x) => (/^\d+$/.test(x) ? Number(x) : x));
-const refresh = async () => { await load(); pollNotes(true); };
+const refresh = async () => { await load(); pollNotes(true); syncPush(); };
 
 function bindAuth() {
   const form = document.getElementById('auth');
@@ -237,12 +293,13 @@ function bindAuth() {
 }
 
 function bind() {
-  on('[data-logout]', 'click', act(async () => { stopSharing(); await api('POST', '/api/logout'); state.me = null; state.pool = null; state.showNotes = false; }));
+  on('[data-logout]', 'click', act(async () => { stopSharing(); await detachPush(); await api('POST', '/api/logout'); state.me = null; state.pool = null; state.showNotes = false; }));
   on('[data-bell]', 'click', act(async () => {
     state.showNotes = !state.showNotes;
     if (state.showNotes) { await pollNotes(true); if (state.unread) { await api('POST', '/api/notifications/read'); state.unread = 0; } }
   }));
-  on('[data-allownotes]', 'click', act(async () => { await Notification.requestPermission(); }));
+  on('[data-pushon]', 'click', act(enablePush));
+  on('[data-pushoff]', 'click', act(disablePush));
   on('[data-emailpref]', 'change', act(async (e) => { const r = await api('PATCH', '/api/me', { email_notifs: e.target.checked }); state.me = r.user; }));
   on('#addKid', 'submit', act(async (e) => { await api('POST', '/api/kids', formData(e)); await load(); }));
   on('[data-rmkid]', 'click', act(async (e) => { await api('DELETE', `/api/kids/${e.target.dataset.rmkid}`); await load(); }));
@@ -286,4 +343,4 @@ function bind() {
 
 const m = /^#reset=([a-f0-9]+)$/.exec(location.hash);
 if (m) { state.resetToken = m[1]; history.replaceState(null, '', location.pathname); }
-load().then(() => pollNotes(true));
+load().then(() => { pollNotes(true); if (state.me) syncPush(); });
