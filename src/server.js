@@ -69,7 +69,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 3000);
   const tls = process.env.TLS_CERT && process.env.TLS_KEY
     ? { cert: readFileSync(process.env.TLS_CERT), key: readFileSync(process.env.TLS_KEY) } : null;
-  const baseUrl = process.env.BASE_URL ?? `${tls ? 'https' : 'http'}://localhost:${port}`;
+  const baseUrl = process.env.BASE_URL ?? process.env.RENDER_EXTERNAL_URL ?? `${tls ? 'https' : 'http'}://localhost:${port}`;
   const db = openDb(process.env.DB_PATH ?? 'carpool.db');
   const push = createPusher({ vapid: loadVapid(db), subject: process.env.VAPID_SUBJECT ?? (baseUrl.startsWith('https:') ? baseUrl : 'mailto:admin@example.com') });
   const app = createApp(db, { mailer: createMailer(), push, baseUrl });

@@ -1,0 +1,17 @@
+# One-click deploy on Render: New + > Blueprint > pick this repo.
+# The disk keeps the SQLite database (users, rides, push keys) across restarts; disks need a paid plan.
+services:
+  - type: web
+    name: carpool
+    runtime: docker
+    plan: starter
+    healthCheckPath: /
+    disk:
+      name: carpool-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DB_PATH
+        value: /data/carpool.db

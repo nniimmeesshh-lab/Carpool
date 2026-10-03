@@ -28,6 +28,14 @@ Requires Node 22.5+ (built-in `node:sqlite`; no npm install).
 | `TRUST_PROXY=1` | behind a TLS-terminating proxy: trust `X-Forwarded-Proto/For` (Secure cookies, HSTS, per-IP limits) |
 
 ## Deploying
+**Render (easiest, ~$7/mo):** push this repo to GitHub, then in Render choose *New + → Blueprint*, select the repo and
+approve. `render.yaml` sets up HTTPS, a persistent disk and the right env vars; Render's public URL is used in emailed links
+automatically. Open the URL on your phone and share it. (Free plans have no disk, so data is lost on restart.)
+
+**Quick test from your own computer:** `npm start`, then `cloudflared tunnel --url http://localhost:3000` for a temporary
+HTTPS link (run with `TRUST_PROXY=1 BASE_URL=<that link>`). It only works while your computer is on.
+
+**General notes:**
 Browsers only allow location sharing over **HTTPS**, so deploy behind TLS. Easiest: run behind Caddy/nginx or a PaaS
 with `TRUST_PROXY=1` and `BASE_URL=https://…`; or set `TLS_CERT`/`TLS_KEY`. Keep a single process (rate limits and the
 reminder timer are in-memory/per-process) and back up the SQLite file.
