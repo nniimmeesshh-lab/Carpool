@@ -293,6 +293,11 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
     const weeks = Number(body.repeat_weeks ?? 1);
     if (!Number.isInteger(weeks) || weeks < 1 || weeks > 26) throw bad('Repeat must be 1-26 weeks');
     const driver = body.drive ? user.id : null;
+    // Parents can book their own kids onto the new rides straight away (used for "I need someone to take my child").
+    const kidIds = Array.isArray(body.kid_ids) ? [...new Set(body.kid_ids.map(Number))] : [];
+    const kids = kidIds.map((id) => one('SELECT * FROM kids WHERE id=? AND parent_id=?', id, user.id));
+    if (kids.some((k) => !k)) throw bad('That is not your child');
+    if (kids.length > seats) throw bad('Not enough seats for all of those kids');
     const ids = [];
     for (let i = 0; i < weeks; i++) {
       const d = new Date(date + 'T00:00:00Z');
@@ -301,11 +306,14 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
         'INSERT INTO rides (pool_id,kind,date,time,place,dest,seats,driver_id,created_by) VALUES (?,?,?,?,?,?,?,?,?)',
         params.id, body.kind, d.toISOString().slice(0, 10), time, place, dest, seats, driver, user.id);
       ids.push(Number(lastInsertRowid));
+      for (const k of kids) run('INSERT INTO riders (ride_id, kid_id) VALUES (?,?)', lastInsertRowid, k.id);
     }
     const first = { kind: body.kind, date, time, place, dest };
     notify(memberIds(params.id), {
       type: driver ? 'ride_new' : 'needs_driver', pool_id: Number(params.id), ride_id: ids[0],
-      text: `${user.name} added ${weeks > 1 ? `${weeks} weekly rides starting ` : ''}${describe(first)} – ${driver ? 'seats available' : 'needs a driver'}`,
+      text: !driver && kids.length
+        ? `${user.name} needs a driver for ${kids.map((k) => k.name).join(' & ')}: ${weeks > 1 ? `${weeks} weekly rides starting ` : ''}${describe(first)}`
+        : `${user.name} added ${weeks > 1 ? `${weeks} weekly rides starting ` : ''}${describe(first)} – ${driver ? 'seats available' : 'needs a driver'}`,
     }, user.id);
     return { ids };
   });

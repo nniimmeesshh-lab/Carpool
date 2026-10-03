@@ -224,7 +224,12 @@ function poolView() {
       <label>Pick up from (address or meeting spot)</label><input name="place" placeholder="e.g. 12 Oak St, or the corner of Elm &amp; 5th" required>
       <label>Drop off at</label><input name="dest" placeholder="e.g. Maple Elementary, 40 School Rd" required>
       <label>Repeat weekly for (weeks)</label><input name="repeat_weeks" type="number" min="1" max="26" value="1">
-      <label class="row"><input type="checkbox" name="drive" style="width:auto"> I'll drive this one</label>
+      <label>What do you need?</label>
+      <label class="row" style="color:var(--ink)"><input type="radio" name="role" value="need" checked style="width:auto"> I need someone to drive my child</label>
+      <label class="row" style="color:var(--ink)"><input type="radio" name="role" value="drive" style="width:auto"> I'll drive (other parents can add their kids)</label>
+      <div id="kidpick">${state.kids.length
+        ? `<label>Which of your children?</label>${state.kids.map((k) => `<label class="row" style="color:var(--ink)"><input type="checkbox" name="kid" value="${k.id}" checked style="width:auto"> ${esc(k.name)}</label>`).join('')}`
+        : '<div class="muted">Add your child on the home screen first (Switch pool → Your children).</div>'}</div>
       <div class="err">${esc(state.error)}</div><button class="primary">Add ride</button></form>`;
   } else {
     body = `<div class="card"><div class="muted">Invite other parents with this code</div><h2 style="margin:.2em 0">${esc(p.code)}</h2></div>
@@ -315,8 +320,12 @@ function bind() {
   on('[data-switch]', 'click', () => { state.pool = null; render(); });
   on('[data-tab]', 'click', (e) => { state.tab = e.target.dataset.tab; state.error = ''; render(); });
   on('#newRide', 'submit', act(async (e) => {
-    const f = formData(e); f.drive = e.target.drive.checked;
-    await api('POST', `/api/pools/${state.pool.id}/rides`, f);
+    const f = formData(e);
+    const driving = f.role === 'drive';
+    const kid_ids = [...e.target.querySelectorAll('input[name=kid]:checked')].map((c) => Number(c.value));
+    if (!driving && !kid_ids.length) throw new Error('Pick the child who needs the ride (add them on the home screen if the list is empty)');
+    delete f.role; delete f.kid;
+    await api('POST', `/api/pools/${state.pool.id}/rides`, { ...f, drive: driving, kid_ids });
     state.tab = 'rides'; await load();
   }));
   const post = (attr, path, method = 'POST') => on(`[data-${attr}]`, 'click', act(async (e) => { await api(method, path(e.target.dataset[attr])); await load(); }));

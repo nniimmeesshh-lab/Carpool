@@ -168,3 +168,16 @@ test('rides have a starting point and a destination', () => {
   assert.equal(ann('PATCH', `/api/rides/${id}`, { dest: 'Gate 2' }).status, 200);
   assert.match(unread(bob)[0], /is now .*\(12 Oak St → Gate 2\)/);
 });
+
+test('ride request: book my kid on creation, others are asked for a driver, accepting notifies me', () => {
+  const { ann, bob, cat, kid, pool } = world();
+  const r = bob('POST', `/api/pools/${pool.id}/rides`, { kind: 'pickup', date: '2030-05-08', time: '16:30', place: 'Galuwa Recreation Centre', dest: '5 Home St', kid_ids: [kid] });
+  assert.equal(r.status, 200);
+  assert.match(unread(ann)[0], /bob needs a driver for Max: .*16:30 \(Galuwa Recreation Centre → 5 Home St\)/);
+  const ride = ann('GET', `/api/pools/${pool.id}`).body.rides[0];
+  assert.deepEqual(ride.riders.map((k) => k.name), ['Max']); assert.equal(ride.driver_id, null);
+  assert.equal(ann('POST', `/api/rides/${ride.id}/drive`).status, 200);
+  assert.match(unread(bob)[0], /ann will drive/);
+  assert.equal(bob('POST', `/api/pools/${pool.id}/rides`, { kind: 'pickup', date: '2030-05-08', time: '16:30', place: 'x', dest: 'y', kid_ids: [999] }).status, 400);
+  assert.equal(cat('POST', `/api/pools/${pool.id}/rides`, { kind: 'pickup', date: '2030-05-08', time: '16:30', place: 'x', kid_ids: [kid] }).status, 400); // not her child
+});
