@@ -123,6 +123,7 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
       const mayTrack = r.mine_driving || r.riders.some((k) => k.parent_id === userId);
       r.location = mayTrack && r.status === 'en_route' && r.lat != null ? { lat: r.lat, lng: r.lng, at: r.loc_at } : null;
       delete r.lat; delete r.lng; delete r.loc_at; delete r.reminded;
+      r.arrived = r.arrived_at != null; delete r.arrived_at;
     }
     return rides;
   };
@@ -413,8 +414,17 @@ export function createApp(db, { mailer = { send() {} }, push = null, baseUrl = '
     requireDriver(ride, user);
     if (ride.status !== 'scheduled') throw bad('Ride already started');
     if (ride.date !== todayIn(poolTz(ride.pool_id), now())) throw bad('You can only start a ride on the day it is scheduled');
-    run(`UPDATE rides SET status='en_route', lat=NULL, lng=NULL, loc_at=NULL WHERE id=?`, ride.id);
-    notify(riderParentIds(ride.id), { type: 'ride_started', pool_id: ride.pool_id, ride_id: ride.id, text: `${user.name} is on the way: ${describe(ride)}` }, user.id);
+    run(`UPDATE rides SET status='en_route', arrived_at=NULL, lat=NULL, lng=NULL, loc_at=NULL WHERE id=?`, ride.id);
+    notify(riderParentIds(ride.id), { type: 'ride_started', pool_id: ride.pool_id, ride_id: ride.id, text: `${user.name} has left and is on the way – you can follow them live: ${describe(ride)}` }, user.id);
+    return { ok: true };
+  });
+  route('POST', '/api/rides/:id/arrived', true, ({ user, params }) => {
+    const ride = getRide(params.id, user.id);
+    requireDriver(ride, user);
+    if (ride.status !== 'en_route') throw bad('Tap "I\'ve left" first');
+    if (ride.arrived_at) return { ok: true };
+    run('UPDATE rides SET arrived_at=? WHERE id=?', now(), ride.id);
+    notify(riderParentIds(ride.id), { type: 'ride_arrived', pool_id: ride.pool_id, ride_id: ride.id, text: `${user.name} has arrived at ${ride.place}` }, user.id);
     return { ok: true };
   });
   route('POST', '/api/rides/:id/location', true, ({ user, params, body }) => {

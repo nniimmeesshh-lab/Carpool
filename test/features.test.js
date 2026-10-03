@@ -88,7 +88,15 @@ test('tracking: start, location privacy, kid states, complete', () => {
   assert.equal(ann('POST', `/api/rides/${future}/start`).status, 400);    // wrong day
   assert.equal(ann('POST', `/api/rides/${id}/location`, { lat: 1, lng: 1 }).status, 400); // not started
   assert.equal(ann('POST', `/api/rides/${id}/start`).status, 200);
-  assert.match(unread(bob)[0], /ann is on the way/);
+  assert.match(unread(bob)[0], /ann has left and is on the way/);
+  assert.equal(ann('POST', `/api/rides/${future}/arrived`).status, 400);  // hasn't left
+  assert.equal(bob('POST', `/api/rides/${id}/arrived`).status, 403);      // not the driver
+  assert.equal(bob('GET', `/api/pools/${pool.id}`).body.rides.find((r) => r.id === id).arrived, false);
+  assert.equal(ann('POST', `/api/rides/${id}/arrived`).status, 200);
+  assert.match(unread(bob)[0], /ann has arrived at School/);
+  assert.equal(ann('POST', `/api/rides/${id}/arrived`).status, 200);      // repeat taps don't re-notify
+  assert.equal(unread(bob).filter((t) => /has arrived at/.test(t)).length, 1);
+  assert.equal(bob('GET', `/api/pools/${pool.id}`).body.rides.find((r) => r.id === id).arrived, true);
   assert.equal(bob('POST', `/api/rides/${id}/riders`, { kid_id: kid }).status, 200); // idempotent
   assert.equal(ann('POST', `/api/rides/${id}/location`, { lat: 95, lng: 1 }).status, 400);
   assert.equal(ann('POST', `/api/rides/${id}/location`, { lat: -33.86, lng: 151.2 }).status, 200);

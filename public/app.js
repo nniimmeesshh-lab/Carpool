@@ -154,7 +154,7 @@ function trackBlock(r) {
   const map = loc
     ? `<div class="muted">Driver location updated ${ago(loc.at)} · <a target="_blank" rel="noopener noreferrer" href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}">open map</a></div>
        <iframe class="map" loading="lazy" title="Driver location" src="https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.01}%2C${lat - 0.006}%2C${lng + 0.01}%2C${lat + 0.006}&layer=mapnik&marker=${lat}%2C${lng}"></iframe>`
-    : (r.mine_driving ? '' : '<div class="muted">Waiting for the driver\'s location…</div>');
+    : (r.mine_driving ? '' : '<div class="muted">Driver has left – waiting for their location…</div>');
   return `<div style="margin-top:8px">${map}</div>`;
 }
 
@@ -163,15 +163,16 @@ function rideCard(r) {
   const riding = new Set(r.riders.map((k) => k.id));
   const scheduled = r.status === 'scheduled';
   if (state.editing === r.id) return editCard(r);
-  const statusTag = r.status === 'en_route' ? '<span class="tag live">On the way</span>' : r.status === 'completed' ? '<span class="tag done">Completed</span>'
+  const statusTag = r.status === 'en_route' ? `<span class="tag live">${r.arrived ? 'Arrived at pickup' : 'Driver on the way'}</span>` : r.status === 'completed' ? '<span class="tag done">Completed</span>'
     : r.driver_id ? `<span class="tag ok">Driver: ${esc(r.mine_driving ? 'you' : r.driver_name)}</span>` : '<span class="tag need">Needs a driver</span>';
   const buttons = [];
   if (scheduled && !r.driver_id) buttons.push(`<button class="small primary" data-drive="${r.id}">I'll drive</button>`);
   if (scheduled && r.mine_driving) {
     buttons.push(`<button class="small" data-undrive="${r.id}">Can't drive</button>`);
-    if (r.date === today()) buttons.push(`<button class="small primary" data-start="${r.id}">Start ride</button>`);
+    if (r.date === today()) buttons.push(`<button class="small primary" data-start="${r.id}">I've left – start sharing GPS</button>`);
   }
   if (r.status === 'en_route' && r.mine_driving) {
+    if (!r.arrived) buttons.push(`<button class="small primary" data-arrived="${r.id}">I've arrived at ${esc(r.place).slice(0, 30)}</button>`);
     buttons.push(state.sharing === r.id ? '<span class="tag live">Sharing location</span>' : `<button class="small" data-share="${r.id}">Share my location</button>`);
     buttons.push(`<button class="small primary" data-complete="${r.id}">Finish ride</button>`);
   }
@@ -332,6 +333,7 @@ function bind() {
   post('drive', (id) => `/api/rides/${id}/drive`);
   post('undrive', (id) => `/api/rides/${id}/drive`, 'DELETE');
   post('complete', (id) => `/api/rides/${id}/complete`);
+  post('arrived', (id) => `/api/rides/${id}/arrived`);
   on('[data-complete]', 'click', () => stopSharing());
   on('[data-start]', 'click', act(async (e) => {
     const id = Number(e.target.dataset.start);
