@@ -9,8 +9,19 @@ export function openDb(path = ':memory:') {
       phone TEXT, pw_hash TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
-      token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
+      token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL, text TEXT NOT NULL, pool_id INTEGER, ride_id INTEGER,
+      created_at INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS notif_user ON notifications(user_id, id);
     CREATE TABLE IF NOT EXISTS pools (
       id INTEGER PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE
     );
@@ -38,5 +49,17 @@ export function openDb(path = ':memory:') {
       PRIMARY KEY (ride_id, kid_id)
     );
   `);
+  // Columns added after the first release (safe to re-run on existing databases).
+  const addColumn = (table, col, def) => {
+    if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+  };
+  addColumn('users', 'email_notifs', 'INTEGER NOT NULL DEFAULT 1');
+  addColumn('pools', 'tz', "TEXT NOT NULL DEFAULT 'UTC'");
+  addColumn('rides', 'status', "TEXT NOT NULL DEFAULT 'scheduled'");
+  addColumn('rides', 'lat', 'REAL');
+  addColumn('rides', 'lng', 'REAL');
+  addColumn('rides', 'loc_at', 'INTEGER');
+  addColumn('rides', 'reminded', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('riders', 'state', "TEXT NOT NULL DEFAULT 'waiting'");
   return db;
 }
