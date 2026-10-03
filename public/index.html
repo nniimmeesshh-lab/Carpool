@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carpool</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2330; --muted:#69708a; --brand:#2f6fed; --ok:#1f9d55; --warn:#d9822b; --line:#e3e6ef; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12141b; --card:#1b1f2a; --ink:#e9ecf5; --muted:#9aa2bd; --line:#2a3040; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1,h2,h3 { margin:.2em 0; } h1 { font-size:1.4rem; } h2 { font-size:1.1rem; margin-top:1.2em; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin:10px 0; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .row.sb { justify-content:space-between; }
+  input,select,button { font:inherit; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  input,select { width:100%; } label { display:block; font-size:.85rem; color:var(--muted); margin:8px 0 2px; }
+  button { cursor:pointer; width:auto; } button.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+  button.small { padding:5px 9px; font-size:.85rem; } button.link { border:none; background:none; color:var(--brand); padding:0; }
+  .tag { font-size:.75rem; padding:2px 8px; border-radius:99px; background:var(--line); }
+  .tag.need { background:#fde8d0; color:#8a4b00; } .tag.ok { background:#d6f3e1; color:#14673a; }
+  .muted { color:var(--muted); font-size:.9rem; } .err { color:#c0392b; min-height:1.2em; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  nav { display:flex; gap:8px; margin:8px 0; } nav button.active { background:var(--ink); color:var(--bg); }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
