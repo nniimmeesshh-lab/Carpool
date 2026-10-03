@@ -1,15 +1,16 @@
-# One-click deploy on Render: New + > Blueprint > pick this repo.
-# The disk keeps the SQLite database (users, rides, push keys) across restarts; disks need a paid plan.
+# Render: New + > Blueprint > pick this repo.
+# FREE plan = no persistent disk: data (users, rides, push key) is lost on restart and it sleeps when idle. Good for testing.
+# For real use: set `plan: starter` and uncomment the disk block so the SQLite file survives restarts.
 services:
   - type: web
     name: carpool
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /
-    disk:
-      name: carpool-data
-      mountPath: /data
-      sizeGB: 1
+    # disk:
+    #   name: carpool-data
+    #   mountPath: /data
+    #   sizeGB: 1
     envVars:
       - key: TRUST_PROXY
         value: "1"

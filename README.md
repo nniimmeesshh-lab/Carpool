@@ -29,7 +29,7 @@ Requires Node 22.5+ (built-in `node:sqlite`; no npm install).
 
 ## Deploying
 **Render (easiest, ~$7/mo):** push this repo to GitHub, then in Render choose *New + → Blueprint*, select the repo and
-approve. `render.yaml` sets up HTTPS, a persistent disk and the right env vars; Render's public URL is used in emailed links
+approve. `render.yaml` (free plan by default; see comments in it to add the persistent disk) sets up HTTPS, a persistent disk and the right env vars; Render's public URL is used in emailed links
 automatically. Open the URL on your phone and share it. (Free plans have no disk, so data is lost on restart.)
 
 **Quick test from your own computer:** `npm start`, then `cloudflared tunnel --url http://localhost:3000` for a temporary
